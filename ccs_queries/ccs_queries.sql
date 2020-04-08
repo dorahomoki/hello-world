@@ -16,12 +16,8 @@ select t.ocid,
        t.buyer as buyer_original_name,
        em.entity_name as buyer_matched_name,
        em.entity_id as buyer_matched_id,
-       CASE when t.buyer ilike '%council%' then 'Central Government'
-            when t.buyer ilike '%foundation%' then 'NHS'
-            when t.buyer ilike '%college' or t.buyer ilike '%university' or t.buyer ilike 'university%' then 'Education'
-            when t.buyer ilike '%department%' or t.buyer ilike '%ministry%' then 'Central Government'
-            else em.level1 END as level1_col,
-            e.level2 as level2_col,
+       em.level1 as level1_col,
+       em.level2 as level2_col,
        t.value as sum_value,
        t.title,
        t.description,
@@ -306,11 +302,7 @@ select a.ocid,
        a.buyer as buyer_original_name,
        em.entity_name as buyer_matched_name,
        em.entity_id as buyer_matched_id,
-       CASE when a.buyer ilike '%council%' then 'Central Government'
-            when a.buyer ilike '%foundation%' then 'NHS'
-            when a.buyer ilike '%college' or a.buyer ilike '%university' or a.buyer ilike 'university%' then 'Education'
-            when a.buyer ilike '%department%' or a.buyer ilike '%ministry%' then 'Central Government'
-            else em.level1 END as level1_col,
+       em.level1 as level1_col,
        em.level2 as level2,
        sum((aw_value::numeric)/aw_total_suppliers) as sum_value,
        a.title,
@@ -549,3 +541,4 @@ or buyer_original_name in ('Hertfordshire NHS Procurement',
                            'West Yorkshire Combined Authority')))
 or ((sum_value is null
 or sum_value::numeric = '0') and (level1_col in('Central Government', 'NHS', 'Local Government'))))
+
