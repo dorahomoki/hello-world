@@ -17,7 +17,7 @@ select t.ocid,
        em.entity_name as buyer_matched_name,
        em.entity_id as buyer_matched_id,
        em.level1 as level1_col,
-       em.level2 as level2_col,
+       e.level2 as level2_col,
        t.value as sum_value,
        t.title,
        t.description,
@@ -343,7 +343,7 @@ or buyer_original_name in ('The South Tees Hospitals NHS Foundation Trust',
 'West Yorkshire Combined Authority''Barnsley, Doncaster, Rotherham and Sheffield Combined Authority',
 'West Yorkshire Combined Authority')))
 or ((sum_value is null
-or sum_value::numeric = '0') and (level1_col in('Central Government', 'NHS', 'Local Government'))))
+or sum_value::numeric = '0') and (level1_col in('Central Government', 'NHS', 'Local Government') and (level1_col in('Central Government', 'NHS', 'Local Government'))))
 
 
 -- CONTRACTS
@@ -358,7 +358,7 @@ select a.ocid,
        em.entity_name as buyer_matched_name,
        em.entity_id as buyer_matched_id,
        em.level1 as level1_col,
-       e.level2 as level2,
+       e.level2 as level2_col,
        sum((aw_value::numeric)/aw_total_suppliers) as sum_value,
        a.title,
        a.description,
@@ -684,4 +684,4 @@ or buyer_original_name in ('Hertfordshire NHS Procurement',
 'West London  NHS Trust',
 'West Yorkshire Combined Authority''Barnsley, Doncaster, Rotherham and Sheffield Combined Authority')))
 or ((sum_value is null
-or sum_value::numeric = '0') and (level1_col in('Central Government', 'NHS', 'Local Government'))))
+or sum_value::numeric = '0') and (level1_col in('Central Government', 'NHS', 'Local Government') and (level1_col in('Central Government', 'NHS', 'Local Government'))))
