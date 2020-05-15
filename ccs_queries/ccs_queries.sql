@@ -7,8 +7,12 @@ create table ocds.ccs_monthly as
 
 -- TENDER
 
-select * from (
-select t.ocid,
+select sub.*,
+       CASE WHEN level1_col = 'Central Government' and sum_value::numeric >= '10000' THEN 'Y'
+            WHEN (level1_col in ('Local Government', 'NHS') or level1_col is null) and sum_value::numeric >= '25000' THEN 'Y'
+            WHEN level1_col in ('Local Government', 'NHS', 'Central Government') and (sum_value is null or sum_value::numeric = '0') THEN 'Y'
+        ELSE 'N'
+        END as value_included from (select t.ocid,
        t.source,
        ds.eprocurement_system,
        t.releasedate,
@@ -39,21 +43,19 @@ select t.ocid,
        coalesce(t.json -> 'releases' -> 0 -> 'buyer' -> 'address' ->> 'countryName', addr_country) as address_countryname,
        coalesce(t.json -> 'releases' -> 0 -> 'buyer' -> 'address' ->> 'streetAddress', e.addr_line1) as address_streetaddress,
        t.tender_url as url,
-       CASE when t.ocid in (select ocid from ocds.duplicates) or t.ocid in (select canonical_ocid from ocds.duplicates) then 'Y'
-            else 'N' END as is_duplicated
-from  ocds.ccs_monthly t
-left join uk_data.ccs_matches em on (t.buyer=em.src_name)
-left join uk_data.entity e on em.entity_id=e.entity_id
-left join ocds.cpv_codes cpv1 on t.cpvs[1]=cpv1.code
-left join ocds.cpv_codes cpv2 on t.cpvs[2]=cpv2.code
-left join ocds.cpv_codes cpv3 on t.cpvs[3]=cpv3.code
-left join ocds.cpv_codes cpv4 on t.cpvs[4]=cpv4.code
-left join ocds.cpv_codes cpv5 on t.cpvs[5]=cpv5.code
-left join ocds.data_sources ds on ds.source=t.source
-Where t.releasedate >= '2020-03-01'
-and t.releasedate < '2020-04-08'
-and t.countryname in ('UK','United Kingdom','England')
-and ( t.source in ('td_competefor', 'td_exportingisgreat_int',
+       CASE when (cpvs[1] not in ('75122000', '45111310', '45216200')
+            and cpvs[1] not like '85%'
+            and cpvs [1] not like '3512%'
+            and cpvs[1] not like '85%'
+            and cpvs [1] not like '3533%'
+            and cpvs[1] not like '3534%'
+            and cpvs [1] not like '354%'
+            and cpvs[1] not like '355%'
+            and cpvs [1] not like '356%'
+            and cpvs[1] not like '357%')
+            or cpvs[1] is null then 'Y'
+            ELSE 'N' END as cpv_included,
+       CASE when t.source in ('td_competefor', 'td_exportingisgreat_int',
                  'td_lancashire_gov_uk', 'td_mod_uk', 'td_salfordcvs_uk',
                  'td_staffsmoorlands_gov_uk', 'td_stoke_gov_uk', 'td_ukho_delta_uk',
                  'td_westnorfolk_gov_uk', 'ted_notices', 'td_finditinbirmingham_uk',
@@ -187,56 +189,11 @@ and ( t.source in ('td_competefor', 'td_exportingisgreat_int',
     or tender_url ilike '%kentbusinessportal.org%'
     or tender_url ilike '%housingprocurement.com%'
     or tender_url ilike '%lupc.bravosolution%'
-    or tender_url ilike '%capitalesourcing.com%'
-    )
-and ((cpvs[1] not in ('75122000', '45111310', '45216200')
-    and cpvs[1] not like '85%'
-    and cpvs [1] not like '3512%'
-    and cpvs[1] not like '85%'
-    and cpvs [1] not like '3533%'
-    and cpvs[1] not like '3534%'
-    and cpvs [1] not like '354%'
-    and cpvs[1] not like '355%'
-    and cpvs [1] not like '356%'
-    and cpvs[1] not like '357%')
-    or cpvs[1] is null
-    )
-group by
-       t.ocid,
-       t.source,
-       ds.eprocurement_system,
-       t.releasedate,
-       t.enddate,
-       buyer_original_name,
-       buyer_matched_name,
-       buyer_matched_id,
-       level1_col,
-       t.title,
-       t.description,
-       cpv_code_main,
-       cpv_description_main,
-       cpv_code_2,
-       cpv_description_2,
-       cpv_code_3,
-       cpv_description_3,
-       cpv_code_4,
-       cpv_description_4,
-       cpv_code_5,
-       cpv_description_5,
-       t.contactname,
-       t.email,
-       t.telephone,
-       address_locality,
-       address_postalcode,
-       address_countryname,
-       address_streetaddress,
-       tender_url,
-       t.value,
-       e.level2) sub
-where ((level1_col = 'Central Government'
-    and sum_value::numeric >= '10000')
-or (sum_value::numeric >= '25000' and ((level1_col in('Local Government', 'NHS') and level2_col not in ('SCOTTISH LOCAL GOVERNMENT','SCOTTISH PENSION SCHEME', 'WELSH LOCAL GOVERNMENT', 'NORTHERN IRELAND'))
-or buyer_original_name in ('The South Tees Hospitals NHS Foundation Trust',
+    or tender_url ilike '%capitalesourcing.com%' then 'Y'
+    else 'N' END as source_included,
+CASE WHEN ((em.level1 in('Central Government', 'NHS', 'Local Government') and (e.level2 not in ('SCOTTISH LOCAL GOVERNMENT','SCOTTISH PENSION SCHEME', 'WELSH LOCAL GOVERNMENT', 'NORTHERN IRELAND') and (buyer not ilike '%limited%'
+and buyer not ilike '%ltd%')))
+or buyer in ('The South Tees Hospitals NHS Foundation Trust',
 'Bradford Metropolitan District Council',
 'Durham County Council',
 'Wiltshire Council',
@@ -341,14 +298,70 @@ or buyer_original_name in ('The South Tees Hospitals NHS Foundation Trust',
 'The Collaborative Procurement partnership LLP acting on behalf of Supply Chain Coordination Ltd, a Management Function of NHS Supply Chain',
 'West London  NHS Trust',
 'West Yorkshire Combined Authority''Barnsley, Doncaster, Rotherham and Sheffield Combined Authority',
-'West Yorkshire Combined Authority')))
-or ((sum_value is null
-or sum_value::numeric = '0') and (level1_col in('Central Government', 'NHS', 'Local Government') and (level1_col in('Central Government', 'NHS', 'Local Government'))))
-
+'West Yorkshire Combined Authority'))
+THEN 'Y'
+ELSE 'N'
+END as buyer_included,
+CASE WHEN mcf.has_cf_duplicate = 'Yes' then 'Y'
+else 'N' end as cf_duplicate,
+sources as duplication_source_list
+from  ocds.ccs_monthly t
+left join uk_data.ccs_matches em on (t.buyer=em.src_name)
+left join uk_data.entity e on em.entity_id=e.entity_id
+left join ocds.cpv_codes cpv1 on t.cpvs[1]=cpv1.code
+left join ocds.cpv_codes cpv2 on t.cpvs[2]=cpv2.code
+left join ocds.cpv_codes cpv3 on t.cpvs[3]=cpv3.code
+left join ocds.cpv_codes cpv4 on t.cpvs[4]=cpv4.code
+left join ocds.cpv_codes cpv5 on t.cpvs[5]=cpv5.code
+left join ocds.data_sources ds on ds.source=t.source
+left join contracts_finder.missing_cf_tenders mcf on mcf.ocid = t.ocid
+Where t.releasedate >= '2020-04-01'
+and t.releasedate < '2020-05-01'
+and t.countryname in ('UK','United Kingdom','England')
+group by
+       t.ocid,
+       t.source,
+       ds.eprocurement_system,
+       t.releasedate,
+       t.enddate,
+       buyer_original_name,
+       buyer_matched_name,
+       buyer_matched_id,
+       level1_col,
+       t.title,
+       t.description,
+       cpv_code_main,
+       cpv_description_main,
+       cpv_code_2,
+       cpv_description_2,
+       cpv_code_3,
+       cpv_description_3,
+       cpv_code_4,
+       cpv_description_4,
+       cpv_code_5,
+       cpv_description_5,
+       t.contactname,
+       t.email,
+       t.telephone,
+       address_locality,
+       address_postalcode,
+       address_countryname,
+       address_streetaddress,
+       tender_url,
+       t.value,
+       e.level2,
+       cf_duplicate,
+       duplication_source_list)
+            sub;
 
 -- CONTRACTS
 
-select * from(
+select sub.*,
+       CASE WHEN level1_col = 'Central Government' and sum_value:: numeric >= '10000' THEN 'Y'
+            WHEN (level1_col in ('Local Government', 'NHS') or level1_col is null) and sum_value:: numeric >= '25000' THEN 'Y'
+            WHEN level1_col in ('Local Government', 'NHS', 'Central Government') and (sum_value is null or sum_value:: numeric = '0') THEN 'Y'
+        ELSE 'N'
+        END as value_included from(
 select a.ocid,
        a.source,
        ds.eprocurement_system,
@@ -358,7 +371,7 @@ select a.ocid,
        em.entity_name as buyer_matched_name,
        em.entity_id as buyer_matched_id,
        em.level1 as level1_col,
-       e.level2 as level2_col,
+       e.level2 as level2,
        sum((aw_value::numeric)/aw_total_suppliers) as sum_value,
        a.title,
        a.description,
@@ -380,22 +393,20 @@ select a.ocid,
        coalesce(t.json -> 'releases' -> 0 -> 'buyer' -> 'address' ->> 'countryName', addr_country) as address_countryname,
        coalesce(t.json -> 'releases' -> 0 -> 'buyer' -> 'address' ->> 'streetAddress', e.addr_line1) as address_streetaddress,
        t.tender_url as url,
-       CASE when a.ocid in (select ocid from ocds.duplicates) or a.ocid in (select canonical_ocid from ocds.duplicates) then 'Y'
-            else 'N' END as is_duplicated
-from ocds.ocds_awards_suppliers_view_mat a
-left join ocds.ccs_monthly t on a.ocid=t.ocid
-left join uk_data.ccs_matches em on (a.buyer=em.src_name)
-left join uk_data.entity e on em.entity_id=e.entity_id
-left join ocds.cpv_codes cpv1 on a.cpvs[1]=cpv1.code
-left join ocds.cpv_codes cpv2 on a.cpvs[2]=cpv2.code
-left join ocds.cpv_codes cpv3 on a.cpvs[3]=cpv3.code
-left join ocds.cpv_codes cpv4 on a.cpvs[4]=cpv4.code
-left join ocds.cpv_codes cpv5 on a.cpvs[5]=cpv5.code
-left join ocds.data_sources ds on ds.source=a.source
-Where a.releasedate >= '2020-03-01'
-and a.releasedate < '2020-04-01'
-and (a.countryname in ('UK','United Kingdom','England') or a.source=('cn_in_tend_uk'))
-and (t.source in ('ted_notices','cf_notices')
+       Case when (a.cpvs[1] not in ('75122000', '45111310', '45216200')
+    and a.cpvs[1] not like '85%'
+    and a.cpvs [1] not like '3512%'
+    and a.cpvs[1] not like '85%'
+    and a.cpvs [1] not like '3533%'
+    and a.cpvs[1] not like '3534%'
+    and a.cpvs [1] not like '354%'
+    and a.cpvs[1] not like '355%'
+    and a.cpvs [1] not like '356%'
+    and a.cpvs[1] not like '357%')
+    or a.cpvs[1] is null then 'Y'
+    ELSE 'N'
+    End as cpv_included,
+       Case when (t.source in ('ted_notices','cf_notices')
     or tender_url ilike '%ardencsu.bravosolution%'
     or tender_url ilike '%cmu.bravosolution%'
     or tender_url ilike '%commercialsolutions.bravosolution%'
@@ -525,57 +536,11 @@ and (t.source in ('ted_notices','cf_notices')
     or tender_url ilike '%kentbusinessportal.org%'
     or tender_url ilike '%housingprocurement.com%'
     or tender_url ilike '%lupc.bravosolution%'
-    or tender_url ilike '%capitalesourcing.com%'
-    )
-and a.source <> 'cn_millstream'
-and ((a.cpvs[1] not in ('75122000', '45111310', '45216200')
-    and a.cpvs[1] not like '85%'
-    and a.cpvs [1] not like '3512%'
-    and a.cpvs[1] not like '85%'
-    and a.cpvs [1] not like '3533%'
-    and a.cpvs[1] not like '3534%'
-    and a.cpvs [1] not like '354%'
-    and a.cpvs[1] not like '355%'
-    and a.cpvs [1] not like '356%'
-    and a.cpvs[1] not like '357%')
-    or a.cpvs[1] is null
-    )
-group by
-       a.ocid,
-       a.source,
-       ds.eprocurement_system,
-       a.releasedate,
-       a.aw_contractperiod_enddate,
-       buyer_original_name,
-       buyer_matched_name,
-       buyer_matched_id,
-       level1_col,
-       a.title,
-       a.description,
-       cpv_code_main,
-       cpv_description_main,
-       cpv_code_2,
-       cpv_description_2,
-       cpv_code_3,
-       cpv_description_3,
-       cpv_code_4,
-       cpv_description_4,
-       cpv_code_5,
-       cpv_description_5,
-       t.contactname,
-       t.email,
-       t.telephone,
-       address_locality,
-       address_postalcode,
-       address_countryname,
-       address_streetaddress,
-       tender_url,
-       e.level2) sub
-where ((level1_col = 'Central Government'
-    and sum_value::numeric >= '10000')
-or (sum_value::numeric >= '25000' and ((level1_col in('Local Government', 'NHS') and level2 not in ('SCOTTISH LOCAL GOVERNMENT','SCOTTISH PENSION SCHEME', 'WELSH LOCAL GOVERNMENT', 'NORTHERN IRELAND'))
-
-or buyer_original_name in ('Hertfordshire NHS Procurement',
+    or tender_url ilike '%capitalesourcing.com%') then 'Y'
+           Else 'N' END as source_included,
+    Case when ((em.level1 in('Central Government', 'NHS', 'Local Government') and (e.level2 not in ('SCOTTISH LOCAL GOVERNMENT','SCOTTISH PENSION SCHEME', 'WELSH LOCAL GOVERNMENT', 'NORTHERN IRELAND') and (a.buyer not ilike '%limited%'
+and a.buyer not ilike '%ltd%')))
+or a.buyer in ('Hertfordshire NHS Procurement',
 'HULL UNIVERSITY TEACHING HOSPITALS NHS TRUST',
 'London and Quadrant Housing Trust',
 'Metropolitan Housing Trust Limited and Thames Valley Housing Association Limited',
@@ -682,6 +647,59 @@ or buyer_original_name in ('Hertfordshire NHS Procurement',
 'South Yorkshire Pensions Authority',
 'The Collaborative Procurement partnership LLP acting on behalf of Supply Chain Coordination Ltd, a Management Function of NHS Supply Chain',
 'West London  NHS Trust',
-'West Yorkshire Combined Authority''Barnsley, Doncaster, Rotherham and Sheffield Combined Authority')))
-or ((sum_value is null
-or sum_value::numeric = '0') and (level1_col in('Central Government', 'NHS', 'Local Government') and (level1_col in('Central Government', 'NHS', 'Local Government'))))
+'West Yorkshire Combined Authority''Barnsley, Doncaster, Rotherham and Sheffield Combined Authority'))
+THEN 'Y'
+ELSE 'N'
+END as buyer_included,
+CASE WHEN mcf.has_cf_duplicate = 'Yes' then 'Y'
+else 'N' end as cf_duplicate,
+sources as duplication_source_list
+from ocds.ocds_awards_suppliers_view_mat a
+left join ocds.ccs_monthly t on a.ocid=t.ocid
+left join uk_data.ccs_matches em on (a.buyer=em.src_name)
+left join uk_data.entity e on em.entity_id=e.entity_id
+left join ocds.cpv_codes cpv1 on a.cpvs[1]=cpv1.code
+left join ocds.cpv_codes cpv2 on a.cpvs[2]=cpv2.code
+left join ocds.cpv_codes cpv3 on a.cpvs[3]=cpv3.code
+left join ocds.cpv_codes cpv4 on a.cpvs[4]=cpv4.code
+left join ocds.cpv_codes cpv5 on a.cpvs[5]=cpv5.code
+left join ocds.data_sources ds on ds.source=a.source
+left join contracts_finder.missing_cf_awards mcf on mcf.ocid=a.ocid
+Where a.releasedate >= '2020-04-01'
+and a.releasedate < '2020-05-01'
+and (a.countryname in ('UK','United Kingdom','England') or a.source=('cn_in_tend_uk'))
+and a.source <> 'cn_millstream'
+group by
+       a.ocid,
+       t.source,
+       a.source,
+       ds.eprocurement_system,
+       a.releasedate,
+       a.aw_contractperiod_enddate,
+       buyer_original_name,
+       buyer_matched_name,
+       buyer_matched_id,
+       level1_col,
+       a.title,
+       a.description,
+       cpv_code_main,
+       cpv_description_main,
+       cpv_code_2,
+       cpv_description_2,
+       cpv_code_3,
+       cpv_description_3,
+       cpv_code_4,
+       cpv_description_4,
+       cpv_code_5,
+       cpv_description_5,
+       t.contactname,
+       t.email,
+       t.telephone,
+       address_locality,
+       address_postalcode,
+       address_countryname,
+       address_streetaddress,
+       tender_url,
+       e.level2,
+       cf_duplicate,
+       duplication_source_list) sub
